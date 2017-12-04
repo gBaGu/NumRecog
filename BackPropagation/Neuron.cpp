@@ -1,7 +1,7 @@
 #define _USE_MATH_DEFINES
 
+#include <iostream>
 #include <cmath>
-#include <ctime>
 #include <algorithm>
 
 #include "Neuron.h"
@@ -16,8 +16,8 @@ double activationF(double val)
 NeuralLink::NeuralLink(Neuron* const inN, Neuron* const outN)
 	: inputNeuron(inN), outputNeuron(outN)
 {
-	srand(time(0));
-	weight = (rand() % 101) / 100 - 0.5;
+	weight = double(rand() % 101) / 100 - 0.5;
+	//std::cout << weight << std::endl;
 }
 
 
@@ -37,11 +37,19 @@ void Neuron::translateSignal() const
 	});
 }
 
+void Neuron::translateSignal(double s) const
+{
+	std::for_each(outputLinks.begin(), outputLinks.end(), [s](std::shared_ptr<NeuralLink> link)
+	{
+		link->passSignal(s);
+	});
+}
+
 double Neuron::getOutputSignal() const
 {
 	auto sum = getSignalsSum();
-	double outSignal = 0;
-	outSignal = activationF(sum);
+	auto outSignal = activationF(sum);
+	//std::cout << "Out Signal: " << outSignal << std::endl;
 	return outSignal;
 }
 
@@ -60,6 +68,7 @@ double Neuron::getSignalsSum() const
 	double sum = 0.0;
 	std::for_each(inputLinks.begin(), inputLinks.end(), [&sum](std::shared_ptr<NeuralLink> link)
 	{
+		//std::cout << "getWeightedSignal: " << link->getWeightedSignal() << std::endl;
 		sum += link->getWeightedSignal();
 	});
 	return sum;

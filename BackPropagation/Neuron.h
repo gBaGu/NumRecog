@@ -12,7 +12,10 @@ public:
 	NeuralLink(Neuron* const inN, Neuron* const outN);
 
 	void passSignal(double s) { signal = s; }
+	void calculateNewWeight(double gradient, double learningRate) { weight -= learningRate * gradient; }
 	double getWeightedSignal() const { return signal * weight; }
+	Neuron* getInputNeuron() const { return inputNeuron; }
+	Neuron* getOutputNeuron() const { return outputNeuron; }
 
 private:
 	double weight;
@@ -29,7 +32,10 @@ public:
 
 	void addLink(Neuron* const n);
 	void translateSignal() const;
+	void translateSignal(double s) const;
 	double getOutputSignal() const;
+	std::vector<std::shared_ptr<NeuralLink>> getInputLinks() const { return inputLinks; }
+	std::vector<std::shared_ptr<NeuralLink>> getOutputLinks() const { return outputLinks; }
 
 private:
 	void addInputLink(std::shared_ptr<NeuralLink> link);
