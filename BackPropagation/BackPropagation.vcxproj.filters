@@ -21,9 +21,15 @@
     <ClCompile Include="Neuron.cpp">
       <Filter>Файлы исходного кода</Filter>
     </ClCompile>
+    <ClCompile Include="Network.cpp">
+      <Filter>Файлы исходного кода</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Neuron.h">
+      <Filter>Заголовочные файлы</Filter>
+    </ClInclude>
+    <ClInclude Include="Network.h">
       <Filter>Заголовочные файлы</Filter>
     </ClInclude>
   </ItemGroup>

@@ -17,7 +17,13 @@ NeuralLink::NeuralLink(Neuron* const inN, Neuron* const outN)
 	: inputNeuron(inN), outputNeuron(outN)
 {
 	weight = double(rand() % 101) / 100 - 0.5;
-	//std::cout << weight << std::endl;
+}
+
+void NeuralLink::calculateNewWeight(double gradient, double learningRate)
+{
+	newWeight = weight - learningRate * gradient;
+	//std::cout << "Old weight: " << weight << "\t";
+	//std::cout << "Gradient: " << gradient << "\tNew weight: " << newWeight << std::endl;
 }
 
 

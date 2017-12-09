@@ -12,13 +12,16 @@ public:
 	NeuralLink(Neuron* const inN, Neuron* const outN);
 
 	void passSignal(double s) { signal = s; }
-	void calculateNewWeight(double gradient, double learningRate) { weight -= learningRate * gradient; }
+	void calculateNewWeight(double gradient, double learningRate);
+	void applyNewWeight() { weight = newWeight; }
 	double getWeightedSignal() const { return signal * weight; }
+	double getWeight() const { return weight; }
 	Neuron* getInputNeuron() const { return inputNeuron; }
 	Neuron* getOutputNeuron() const { return outputNeuron; }
 
 private:
 	double weight;
+	double newWeight;
 	double signal;
 
 	Neuron* inputNeuron;
