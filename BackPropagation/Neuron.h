@@ -36,7 +36,7 @@ public:
 	void addLink(Neuron* const n);
 	void translateSignal() const;
 	void translateSignal(double s) const;
-	double getOutputSignal() const;
+	virtual double getOutputSignal() const;
 	std::vector<std::shared_ptr<NeuralLink>> getInputLinks() const { return inputLinks; }
 	std::vector<std::shared_ptr<NeuralLink>> getOutputLinks() const { return outputLinks; }
 
@@ -47,4 +47,12 @@ private:
 
 	std::vector<std::shared_ptr<NeuralLink>> inputLinks;
 	std::vector<std::shared_ptr<NeuralLink>> outputLinks;
+};
+
+class Bias : public Neuron
+{
+public:
+	Bias() : Neuron() {}
+
+	virtual double getOutputSignal() const { return 1; }
 };

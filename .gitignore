@@ -1,6 +1,5 @@
 *.db
 *.opendb
-*.txt
 
 /**/debug/**
 /**/release/**

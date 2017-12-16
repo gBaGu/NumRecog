@@ -1,12 +1,13 @@
 #include <fstream>
 #include <thread>
 #include <algorithm>
+#include <iterator>
 #include <experimental\filesystem>
 
 #include "Network.h"
 
-
 namespace fs = std::experimental::filesystem;
+
 
 Network::Network(Config cfg)
 	: learningRate(cfg.learningRate)
@@ -25,6 +26,11 @@ Network::Network(Config cfg)
 		cv::resize(img, img, cfg.inputImageSize);
 		trainSelection.push_back(std::pair<cv::Mat, std::string>(img, label));
 	}
+	std::transform(trainSelection.begin(), trainSelection.end(), std::back_inserter(shuffledTrainSelection),
+		[](std::pair<cv::Mat, std::string> p)
+	{
+		return std::pair<cv::Mat, std::string>(p.first.clone(), p.second);
+	});
 
 	inputLayer.resize(cfg.inputImageSize.area());
 	hiddenLayer.resize(cfg.hiddenLayerSize);
@@ -37,12 +43,20 @@ Network::Network(Config cfg)
 			lIn.addLink(&lOut);
 		}
 	}
+	for (auto& lOut : hiddenLayer)
+	{
+		inputBias.addLink(&lOut);
+	}
 	for (auto& lIn : hiddenLayer)
 	{
 		for (auto& lOut : outputLayer)
 		{
 			lIn.addLink(&lOut);
 		}
+	}
+	for (auto& lOut : outputLayer)
+	{
+		hiddenBias.addLink(&lOut);
 	}
 }
 
@@ -58,38 +72,31 @@ void Network::train()
 		catch (const std::exception& ex)
 		{
 			std::cout << ex.what() << std::endl;
+			exit(1);
 		}
 		std::cout << "\n==============================================\n"
 			<< "EPOCH ENDED\n"
 			<< "Epoch: " << epochNumber << "\tError: " << error << std::endl
 			<< "==============================================\n";
-		learningRate *= 0.9;
-	} while (error > 0.01 && epochNumber < 20);
-}
-
-void Network::test(cv::Mat sample)
-{
-	std::cout << "\n==============================================\n"
-		<< "TESTING THIS SUPER DEEP (1 HIDDEN LAYER) NEURAL NETWORK\n"
-		<< "==============================================\n";
-	passForward(sample);
+		learningRate *= 0.99;
+	} while (error > 0.01 && epochNumber < 200);
 }
 
 double Network::doEpoch()
 {
-	std::random_shuffle(trainSelection.begin(), trainSelection.end());
+	asyncShuffleTrainSelection();
 
 	epochNumber++;
-	double totalError = 0.0;
-	for (auto& sample : trainSelection)
+	size_t mainPartitionSize = trainSelection.size() * 0.7;
+	auto partition = trainSelection.begin() + mainPartitionSize;
+	//BACK PROPAGATION
+	for (auto sampleIt = trainSelection.begin(); sampleIt != partition; sampleIt++)
 	{
-		passForward(sample.first);
-		std::cout << "Right answer: " << sample.second << std::endl;
+		std::cout << "Winner: " << detect(sampleIt->first);
+		std::cout << "\t\tRight answer: " << sampleIt->second << std::endl;
 
 		std::vector<double> targetOutput(outputLayer.size(), 0.0);
-		targetOutput.at(stoi(sample.second)) = 1.0;
-
-		totalError += getTotalError(targetOutput);
+		targetOutput.at(stoi(sampleIt->second)) = 1.0;
 
 		//CALCULATING HIDDEN->OUTPUT
 		auto targetIt = targetOutput.begin();
@@ -99,14 +106,10 @@ double Network::doEpoch()
 			{
 				auto outSignal = neuron.getOutputSignal();
 				double firstPart = -(*targetIt - outSignal);
-				//std::cout << "First part: " << firstPart << "\t";
 				double secondPart = outSignal * (1 - outSignal);
-				//std::cout << "Second part: " << secondPart << "\t";
 				double thirdPart = inLink->getInputNeuron()->getOutputSignal();
-				//std::cout << "Third part: " << thirdPart << "\t";
 
 				double gradientWithRespectToWeight = firstPart * secondPart * thirdPart;
-				//std::cout << "Gradient: " << gradientWithRespectToWeight << std::endl;
 				inLink->calculateNewWeight(gradientWithRespectToWeight, learningRate);
 			}
 			targetIt++;
@@ -132,7 +135,6 @@ double Network::doEpoch()
 				inLink->calculateNewWeight(gradientWithRespectToWeight, learningRate);
 			}
 		}
-
 		//APPLYING INPUT->HIDDEN
 		for (auto neuron : inputLayer)
 		{
@@ -146,17 +148,30 @@ double Network::doEpoch()
 		{
 			for (auto outLink : neuron.getOutputLinks())
 			{
-				//std::cout << outLink->getWeight() << "\t->\t";
 				outLink->applyNewWeight();
-				//std::cout << outLink->getWeight() << std::endl;
 			}
 		}
 	}
+	//CALCULATING TOTAL ERROR
+	double totalError = 0.0;
+	for (auto sampleIt = partition; sampleIt != trainSelection.end(); sampleIt++)
+	{
+		std::cout << "Winner: " << detect(sampleIt->first);
+		std::cout << "\t\tRight answer: " << sampleIt->second << std::endl << std::endl;
 
-	return totalError / trainSelection.size();
+		std::vector<double> targetOutput(outputLayer.size(), 0.0);
+		targetOutput.at(stoi(sampleIt->second)) = 1.0;
+
+		totalError += getTotalError(targetOutput);
+	}
+
+	shuffler->join();
+	std::swap(shuffledTrainSelection, trainSelection);
+
+	return totalError / (trainSelection.size() - mainPartitionSize);
 }
 
-void Network::passForward(cv::Mat sample)
+int Network::detect(cv::Mat sample)
 {
 	auto layerIt = inputLayer.begin();
 	for (int i = 0; i < sample.rows; i++)
@@ -168,23 +183,25 @@ void Network::passForward(cv::Mat sample)
 			layerIt++;
 		}
 	}
+	inputBias.translateSignal();
 
 	for (layerIt = hiddenLayer.begin(); layerIt != hiddenLayer.end(); layerIt++)
 	{
 		layerIt->translateSignal();
 	}
+	hiddenBias.translateSignal();
 
 	auto winner = std::max_element(outputLayer.begin(), outputLayer.end(), [](Neuron left, Neuron right)
 	{
 		return left.getOutputSignal() < right.getOutputSignal();
 	});
-	int i = 0;
+	/*int i = 0;
 	for (auto neuron : outputLayer)
 	{
 		std::cout << i << ": " << neuron.getOutputSignal() << std::endl;
 		i++;
-	}
-	std::cout << "Winner: " << std::distance(outputLayer.begin(), winner) << std::endl;
+	}*/
+	return std::distance(outputLayer.begin(), winner);
 }
 
 double Network::getTotalError(const std::vector<double>& targetOutput) const
@@ -195,4 +212,13 @@ double Network::getTotalError(const std::vector<double>& targetOutput) const
 		res += 0.5 * pow(targetOutput[i] - outputLayer[i].getOutputSignal(), 2);
 	}
 	return res;
+}
+
+void Network::asyncShuffleTrainSelection()
+{
+	shuffler = std::make_unique<std::thread>([](std::vector<std::pair<cv::Mat, std::string>>& toShuffle)
+	{
+		std::random_shuffle(toShuffle.begin(), toShuffle.end());
+	},
+		shuffledTrainSelection);
 }
