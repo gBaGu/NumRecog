@@ -2,17 +2,63 @@
 #include <thread>
 #include <algorithm>
 #include <iterator>
-#include <experimental\filesystem>
 
 #include "Network.h"
 
-namespace fs = std::experimental::filesystem;
 
+std::unique_ptr<Network> Network::load(lua_State* lua, const fs::path& scriptFilename)
+{
+	Network::Config cfg;
+
+	using namespace luabridge;
+	if (luaL_dofile(lua, scriptFilename.string().c_str()) == 0)
+	{
+		auto refTrainSelectionPath = getGlobal(lua, "trainSelectionPath");
+		auto refLearningRate = getGlobal(lua, "learningRate");
+		auto refImageSize = getGlobal(lua, "imageSize");
+		auto refHiddenLayerSize = getGlobal(lua, "hiddenLayerSize");
+		auto refClasses = getGlobal(lua, "classes");
+		auto refLoadWeightsPath = getGlobal(lua, "loadWeightsPath");
+		auto refSaveWeightsPath = getGlobal(lua, "saveWeightsPath");
+		if (!refTrainSelectionPath.isString() ||
+			!refLearningRate.isNumber() ||
+			!refImageSize.isTable() ||
+			!refHiddenLayerSize.isNumber() ||
+			!refClasses.isNumber() ||
+			!refLoadWeightsPath.isString() ||
+			!refSaveWeightsPath.isString())
+		{
+			throw std::runtime_error("Bad configuration script.");
+		}
+
+		cfg.trainSelectionPath = refTrainSelectionPath.cast<std::string>();
+		cfg.learningRate = refLearningRate.cast<double>();
+		if (!refImageSize["w"].isNumber() ||
+			!refImageSize["h"].isNumber())
+		{
+			throw std::runtime_error("Bad configuration script.");
+		}
+		cfg.inputImageSize = cv::Size(refImageSize["w"].cast<int>(), refImageSize["h"].cast<int>());
+		cfg.hiddenLayerSize = refHiddenLayerSize.cast<int>();
+		cfg.classes = refClasses.cast<int>();
+		cfg.loadWeightsPath = refLoadWeightsPath.cast<std::string>();
+		cfg.saveWeightsPath = refSaveWeightsPath.cast<std::string>();
+	}
+	else
+	{
+		throw std::runtime_error("Error occured while loading lua script.");
+	}
+
+	return std::make_unique<Network>(cfg);
+}
 
 Network::Network(Config cfg)
-	: learningRate(cfg.learningRate)
+	: learningRate(cfg.learningRate),
+	loadWeightsPath(cfg.loadWeightsPath),
+	saveWeightsPath(cfg.saveWeightsPath),
+	imageSize(cfg.inputImageSize)
 {
-	for (auto& p : fs::directory_iterator(cfg.trainSelectionFolder))
+	for (auto& p : fs::directory_iterator(cfg.trainSelectionPath))
 	{
 		if (p.path().extension().string() != ".jpg")
 		{
@@ -58,6 +104,11 @@ Network::Network(Config cfg)
 	{
 		hiddenBias.addLink(&lOut);
 	}
+
+	if (!loadWeightsPath.empty())
+	{
+		loadWeights();
+	}
 }
 
 void Network::train()
@@ -80,6 +131,100 @@ void Network::train()
 			<< "==============================================\n";
 		learningRate *= 0.99;
 	} while (error > 0.01 && epochNumber < 200);
+	saveWeights();
+}
+
+void Network::loadWeights()
+{
+	std::ifstream fin(loadWeightsPath);
+	if (!fin.is_open())
+	{
+		std::cout << "Error occured while opening file for weights.\n";
+		return;
+	}
+
+	int inputLayerSize = 0;
+	int hiddenLayerSize = 0;
+	int outputLayerSize = 0;
+	fin >> inputLayerSize
+		>> hiddenLayerSize
+		>> outputLayerSize;
+	if (inputLayerSize != inputLayer.size() ||
+		hiddenLayerSize != hiddenLayer.size() ||
+		outputLayerSize != outputLayer.size())
+	{
+		std::cout << "Weights file do not match current network configuration.\n";
+		return;
+	}
+
+	double weight = 0.0;
+	for (const auto& neuron : inputLayer)
+	{
+		for (const auto& link : neuron.getOutputLinks())
+		{
+			fin >> weight;
+			link->setWeight(weight);
+		}
+	}
+	for (const auto& link : inputBias.getOutputLinks())
+	{
+		fin >> weight;
+		link->setWeight(weight);
+	}
+	for (const auto& neuron : hiddenLayer)
+	{
+		for (const auto& link : neuron.getOutputLinks())
+		{
+			fin >> weight;
+			link->setWeight(weight);
+		}
+	}
+	for (const auto& link : hiddenBias.getOutputLinks())
+	{
+		fin >> weight;
+		link->setWeight(weight);
+	}
+
+	fin.close();
+}
+
+void Network::saveWeights() const
+{
+	std::ofstream fout(saveWeightsPath);
+	if (!fout.is_open())
+	{
+		std::cout << "Error occured while opening file for weights.\n";
+		return;
+	}
+
+	fout << inputLayer.size() << std::endl
+		<< hiddenLayer.size() << std::endl
+		<< outputLayer.size() << std::endl;
+
+	for (const auto& neuron : inputLayer)
+	{
+		for (const auto& link : neuron.getOutputLinks())
+		{
+			fout << link->getWeight() << std::endl;
+		}
+	}
+	for (const auto& link : inputBias.getOutputLinks())
+	{
+		fout << link->getWeight() << std::endl;
+	}
+	for (const auto& neuron : hiddenLayer)
+	{
+		for (const auto& link : neuron.getOutputLinks())
+		{
+			fout << link->getWeight() << std::endl;
+		}
+	}
+	for (const auto& link : hiddenBias.getOutputLinks())
+	{
+		fout << link->getWeight() << std::endl;
+	}
+
+	fout.close();
 }
 
 double Network::doEpoch()
@@ -173,6 +318,8 @@ double Network::doEpoch()
 
 int Network::detect(cv::Mat sample)
 {
+	cv::resize(sample, sample, imageSize);
+
 	auto layerIt = inputLayer.begin();
 	for (int i = 0; i < sample.rows; i++)
 	{

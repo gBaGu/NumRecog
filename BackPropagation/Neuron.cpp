@@ -22,8 +22,6 @@ NeuralLink::NeuralLink(Neuron* const inN, Neuron* const outN)
 void NeuralLink::calculateNewWeight(double gradient, double learningRate)
 {
 	newWeight = weight - learningRate * gradient;
-	//std::cout << "Old weight: " << weight << "\t";
-	//std::cout << "Gradient: " << gradient << "\tNew weight: " << newWeight << std::endl;
 }
 
 
@@ -55,7 +53,6 @@ double Neuron::getOutputSignal() const
 {
 	auto sum = getSignalsSum();
 	auto outSignal = activationF(sum);
-	//std::cout << "Out Signal: " << outSignal << std::endl;
 	return outSignal;
 }
 
@@ -74,7 +71,6 @@ double Neuron::getSignalsSum() const
 	double sum = 0.0;
 	std::for_each(inputLinks.begin(), inputLinks.end(), [&sum](std::shared_ptr<NeuralLink> link)
 	{
-		//std::cout << "getWeightedSignal: " << link->getWeightedSignal() << std::endl;
 		sum += link->getWeightedSignal();
 	});
 	return sum;

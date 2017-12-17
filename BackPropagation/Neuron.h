@@ -14,6 +14,7 @@ public:
 	void passSignal(double s) { signal = s; }
 	void calculateNewWeight(double gradient, double learningRate);
 	void applyNewWeight() { weight = newWeight; }
+	void setWeight(double w) { weight = w; }
 	double getWeightedSignal() const { return signal * weight; }
 	double getWeight() const { return weight; }
 	Neuron* getInputNeuron() const { return inputNeuron; }

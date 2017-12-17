@@ -1,6 +1,7 @@
 #include <iostream>
 #include <fstream>
 #include <ctime>
+#include <memory>
 #include <experimental\filesystem>
 
 #include <opencv2\opencv.hpp>
@@ -8,21 +9,27 @@
 #include "Network.h"
 
 namespace fs = std::experimental::filesystem;
+//using namespace luabridge;
 
 
 int main(int argc, char ** argv)
 {
 	srand(time(0));
+	lua_State* lua = luaL_newstate();
+	luaL_openlibs(lua);
 
-	Network::Config cfg;
-	cfg.trainSelectionFolder = "data/train_5x7_10";
-	cfg.learningRate = 0.5;
-	cfg.inputImageSize = cv::Size(5, 7);
-	cfg.hiddenLayerSize = 50;//20;
-	cfg.classes = 10;
+	std::unique_ptr<Network> net;
+	try
+	{
+		net = Network::load(lua, "data/config.lua");
+	}
+	catch (const std::runtime_error& ex)
+	{
+		std::cout << ex.what() << std::endl;
+		return 0;
+	}
 
-	Network nn(cfg);
-	nn.train();
+	//net->train();
 
 	std::cout << "\n==============================================\n"
 		<< "TESTING THIS SUPER DEEP (1 HIDDEN LAYER) NEURAL NETWORK\n"
@@ -39,8 +46,7 @@ int main(int argc, char ** argv)
 		}
 
 		auto img = cv::imread(path.string(), CV_LOAD_IMAGE_GRAYSCALE);
-		cv::resize(img, img, cfg.inputImageSize);
-		auto dtectedNum = nn.detect(img);
+		auto dtectedNum = net->detect(img);
 
 		testSelectionSize++;
 		std::ifstream inf(path.parent_path() / path.filename().replace_extension(".txt"));
