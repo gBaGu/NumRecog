@@ -4,6 +4,7 @@ imageSize = {
 	w = 5,
 	h = 7
 }
+hiddenLayersNumber = 2
 hiddenLayerSize = 20
 classes = 10
 loadWeightsPath = 'data/weights'

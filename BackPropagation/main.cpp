@@ -28,6 +28,11 @@ int main(int argc, char ** argv)
 		std::cout << ex.what() << std::endl;
 		return 0;
 	}
+	catch (const std::logic_error& ex)
+	{
+		std::cout << ex.what() << std::endl;
+		return 0;
+	}
 
 	std::string testDir;
 	if (argc == 3 && !strcmp(argv[1], "train"))
@@ -37,6 +42,7 @@ int main(int argc, char ** argv)
 	}
 	else if (argc == 2)
 	{
+		net->loadWeights();
 		testDir = argv[1];
 	}
 

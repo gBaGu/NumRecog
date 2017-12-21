@@ -17,6 +17,11 @@ NeuralLink::NeuralLink(Neuron* const inN, Neuron* const outN)
 	: inputNeuron(inN), outputNeuron(outN)
 {
 	weight = double(rand() % 101) / 100 - 0.5;
+	if (std::isnan(weight))
+	{
+		std::cout << ".";
+		getchar();
+	}
 }
 
 void NeuralLink::calculateNewWeight(double gradient, double learningRate)
@@ -52,7 +57,17 @@ void Neuron::translateSignal(double s) const
 double Neuron::getOutputSignal() const
 {
 	auto sum = getSignalsSum();
+	if (std::isnan(sum))
+	{
+		std::cout << ".";
+		getchar();
+	}
 	auto outSignal = activationF(sum);
+	if (std::isnan(outSignal))
+	{
+		std::cout << ".";
+		getchar();
+	}
 	return outSignal;
 }
 
@@ -71,7 +86,17 @@ double Neuron::getSignalsSum() const
 	double sum = 0.0;
 	std::for_each(inputLinks.begin(), inputLinks.end(), [&sum](std::shared_ptr<NeuralLink> link)
 	{
+		if (std::isnan(link->getWeightedSignal()))
+		{
+			std::cout << ".";
+			getchar();
+		}
 		sum += link->getWeightedSignal();
+		if (std::isnan(sum))
+		{
+			std::cout << ".";
+			getchar();
+		}
 	});
 	return sum;
 }

@@ -16,6 +16,7 @@ std::unique_ptr<Network> Network::load(lua_State* lua, const fs::path& scriptFil
 		auto refTrainSelectionPath = getGlobal(lua, "trainSelectionPath");
 		auto refLearningRate = getGlobal(lua, "learningRate");
 		auto refImageSize = getGlobal(lua, "imageSize");
+		auto refHiddenLayersNumber = getGlobal(lua, "hiddenLayersNumber");
 		auto refHiddenLayerSize = getGlobal(lua, "hiddenLayerSize");
 		auto refClasses = getGlobal(lua, "classes");
 		auto refLoadWeightsPath = getGlobal(lua, "loadWeightsPath");
@@ -23,6 +24,7 @@ std::unique_ptr<Network> Network::load(lua_State* lua, const fs::path& scriptFil
 		if (!refTrainSelectionPath.isString() ||
 			!refLearningRate.isNumber() ||
 			!refImageSize.isTable() ||
+			!refHiddenLayersNumber.isNumber() ||
 			!refHiddenLayerSize.isNumber() ||
 			!refClasses.isNumber() ||
 			!refLoadWeightsPath.isString() ||
@@ -39,6 +41,11 @@ std::unique_ptr<Network> Network::load(lua_State* lua, const fs::path& scriptFil
 			throw std::runtime_error("Bad configuration script.");
 		}
 		cfg.inputImageSize = cv::Size(refImageSize["w"].cast<int>(), refImageSize["h"].cast<int>());
+		cfg.hiddenLayersNumber = refHiddenLayersNumber.cast<int>();
+		if (cfg.hiddenLayersNumber < 1)
+		{
+			throw std::logic_error("Layers number should be at least 1.");
+		}
 		cfg.hiddenLayerSize = refHiddenLayerSize.cast<int>();
 		cfg.classes = refClasses.cast<int>();
 		cfg.loadWeightsPath = refLoadWeightsPath.cast<std::string>();
@@ -79,21 +86,43 @@ Network::Network(Config cfg)
 	});
 
 	inputLayer.resize(cfg.inputImageSize.area());
-	hiddenLayer.resize(cfg.hiddenLayerSize);
+	hiddenLayers.resize(cfg.hiddenLayersNumber);
+	for (auto& layer : hiddenLayers)
+	{
+		layer.first.resize(cfg.hiddenLayerSize);
+	}
+	//hiddenLayer.resize(cfg.hiddenLayerSize);
 	outputLayer.resize(cfg.classes);
 
+	//INPUT->HIDDEN
 	for (auto& lIn : inputLayer)
 	{
-		for (auto& lOut : hiddenLayer)
+		for (auto& lOut : hiddenLayers.front().first)
 		{
 			lIn.addLink(&lOut);
 		}
 	}
-	for (auto& lOut : hiddenLayer)
+	for (auto& lOut : hiddenLayers.front().first)
 	{
 		inputBias.addLink(&lOut);
 	}
-	for (auto& lIn : hiddenLayer)
+	//HIDDEN->HEDDEN
+	for (int i = 0; i < hiddenLayers.size() - 1; i++)
+	{
+		for (auto& lIn : hiddenLayers[i].first)
+		{
+			for (auto& lOut : hiddenLayers[i + 1].first)
+			{
+				lIn.addLink(&lOut);
+			}
+		}
+		for (auto& lOut : hiddenLayers[i + 1].first)
+		{
+			hiddenLayers[i].second.addLink(&lOut);
+		}
+	}
+	//HIDDEN->OUTPUT
+	for (auto& lIn : hiddenLayers.back().first)
 	{
 		for (auto& lOut : outputLayer)
 		{
@@ -102,13 +131,73 @@ Network::Network(Config cfg)
 	}
 	for (auto& lOut : outputLayer)
 	{
-		hiddenBias.addLink(&lOut);
+		hiddenLayers.back().second.addLink(&lOut);
 	}
 
-	if (!loadWeightsPath.empty())
+	/*if (!loadWeightsPath.empty())
 	{
 		loadWeights();
+	}*/
+}
+
+void Network::loadWeights()
+{
+	std::ifstream fin(loadWeightsPath);
+	if (!fin.is_open())
+	{
+		std::cout << "Error occured while opening file for weights.\n";
+		return;
 	}
+
+	int inputLayerSize = 0;
+	int hiddenLayersNumber = 0;
+	int hiddenLayerSize = 0;
+	int outputLayerSize = 0;
+	fin >> inputLayerSize
+		>> hiddenLayersNumber
+		>> hiddenLayerSize
+		>> outputLayerSize;
+	if (inputLayerSize != inputLayer.size() ||
+		hiddenLayersNumber != hiddenLayers.size() ||
+		hiddenLayerSize != hiddenLayers.front().first.size() ||
+		outputLayerSize != outputLayer.size())
+	{
+		std::cout << "Weights file do not match current network configuration.\n";
+		return;
+	}
+
+	double weight = 0.0;
+	for (const auto& neuron : inputLayer)
+	{
+		for (const auto& link : neuron.getOutputLinks())
+		{
+			fin >> weight;
+			link->setWeight(weight);
+		}
+	}
+	for (const auto& link : inputBias.getOutputLinks())
+	{
+		fin >> weight;
+		link->setWeight(weight);
+	}
+	for (const auto& hiddenLayer : hiddenLayers)
+	{
+		for (const auto& neuron : hiddenLayer.first)
+		{
+			for (const auto& link : neuron.getOutputLinks())
+			{
+				fin >> weight;
+				link->setWeight(weight);
+			}
+		}
+		for (const auto& link : hiddenLayer.second.getOutputLinks())
+		{
+			fin >> weight;
+			link->setWeight(weight);
+		}
+	}
+
+	fin.close();
 }
 
 void Network::train()
@@ -134,60 +223,6 @@ void Network::train()
 	saveWeights();
 }
 
-void Network::loadWeights()
-{
-	std::ifstream fin(loadWeightsPath);
-	if (!fin.is_open())
-	{
-		std::cout << "Error occured while opening file for weights.\n";
-		return;
-	}
-
-	int inputLayerSize = 0;
-	int hiddenLayerSize = 0;
-	int outputLayerSize = 0;
-	fin >> inputLayerSize
-		>> hiddenLayerSize
-		>> outputLayerSize;
-	if (inputLayerSize != inputLayer.size() ||
-		hiddenLayerSize != hiddenLayer.size() ||
-		outputLayerSize != outputLayer.size())
-	{
-		std::cout << "Weights file do not match current network configuration.\n";
-		return;
-	}
-
-	double weight = 0.0;
-	for (const auto& neuron : inputLayer)
-	{
-		for (const auto& link : neuron.getOutputLinks())
-		{
-			fin >> weight;
-			link->setWeight(weight);
-		}
-	}
-	for (const auto& link : inputBias.getOutputLinks())
-	{
-		fin >> weight;
-		link->setWeight(weight);
-	}
-	for (const auto& neuron : hiddenLayer)
-	{
-		for (const auto& link : neuron.getOutputLinks())
-		{
-			fin >> weight;
-			link->setWeight(weight);
-		}
-	}
-	for (const auto& link : hiddenBias.getOutputLinks())
-	{
-		fin >> weight;
-		link->setWeight(weight);
-	}
-
-	fin.close();
-}
-
 void Network::saveWeights() const
 {
 	std::ofstream fout(saveWeightsPath);
@@ -198,7 +233,8 @@ void Network::saveWeights() const
 	}
 
 	fout << inputLayer.size() << std::endl
-		<< hiddenLayer.size() << std::endl
+		<< hiddenLayers.size() << std::endl
+		<< hiddenLayers.front().first.size() << std::endl
 		<< outputLayer.size() << std::endl;
 
 	for (const auto& neuron : inputLayer)
@@ -212,16 +248,19 @@ void Network::saveWeights() const
 	{
 		fout << link->getWeight() << std::endl;
 	}
-	for (const auto& neuron : hiddenLayer)
+	for (const auto& hiddenLayer : hiddenLayers)
 	{
-		for (const auto& link : neuron.getOutputLinks())
+		for (const auto& neuron : hiddenLayer.first)
+		{
+			for (const auto& link : neuron.getOutputLinks())
+			{
+				fout << link->getWeight() << std::endl;
+			}
+		}
+		for (const auto& link : hiddenLayer.second.getOutputLinks())
 		{
 			fout << link->getWeight() << std::endl;
 		}
-	}
-	for (const auto& link : hiddenBias.getOutputLinks())
-	{
-		fout << link->getWeight() << std::endl;
 	}
 
 	fout.close();
@@ -259,25 +298,28 @@ double Network::doEpoch()
 			}
 			targetIt++;
 		}
-		//CALCULATING INPUT->HIDDEN
-		for (auto neuron : hiddenLayer)
+		//CALCULATING INPUT->HIDDEN, HIDDEN->HIDDEN
+		for (const auto& hiddenLayer : hiddenLayers)
 		{
-			for (auto inLink : neuron.getInputLinks())
+			for (auto neuron : hiddenLayer.first)
 			{
-				auto outSignal = neuron.getOutputSignal();
-				double firstPart = 0;
-				targetIt = targetOutput.begin();
-				for (auto outLink : neuron.getOutputLinks())
+				for (auto inLink : neuron.getInputLinks())
 				{
-					auto outSignal = outLink->getOutputNeuron()->getOutputSignal();
-					firstPart += (-(*targetIt - outSignal) * outSignal * (1 - outSignal) * outLink->getWeight());
-					targetIt++;
-				}
-				double secondPart = outSignal * (1 - outSignal);
-				double thirdPart = inLink->getInputNeuron()->getOutputSignal();
+					auto outSignal = neuron.getOutputSignal();
+					double firstPart = 0;
+					targetIt = targetOutput.begin();
+					for (auto outLink : neuron.getOutputLinks())
+					{
+						auto outSignal = outLink->getOutputNeuron()->getOutputSignal();
+						firstPart += (-(*targetIt - outSignal) * outSignal * (1 - outSignal) * outLink->getWeight());
+						targetIt++;
+					}
+					double secondPart = outSignal * (1 - outSignal);
+					double thirdPart = inLink->getInputNeuron()->getOutputSignal();
 
-				double gradientWithRespectToWeight = firstPart * secondPart * thirdPart;
-				inLink->calculateNewWeight(gradientWithRespectToWeight, learningRate);
+					double gradientWithRespectToWeight = firstPart * secondPart * thirdPart;
+					inLink->calculateNewWeight(gradientWithRespectToWeight, learningRate);
+				}
 			}
 		}
 		//APPLYING INPUT->HIDDEN
@@ -289,11 +331,14 @@ double Network::doEpoch()
 			}
 		}
 		//APPLYING HIDDEN->OUTPUT
-		for (auto neuron : hiddenLayer)
+		for (const auto& hiddenLayer : hiddenLayers)
 		{
-			for (auto outLink : neuron.getOutputLinks())
+			for (auto neuron : hiddenLayer.first)
 			{
-				outLink->applyNewWeight();
+				for (auto outLink : neuron.getOutputLinks())
+				{
+					outLink->applyNewWeight();
+				}
 			}
 		}
 	}
@@ -307,7 +352,19 @@ double Network::doEpoch()
 		std::vector<double> targetOutput(outputLayer.size(), 0.0);
 		targetOutput.at(stoi(sampleIt->second)) = 1.0;
 
+		if (std::isnan(getTotalError(targetOutput)))
+		{
+			std::cout << ".";
+			getchar();
+		}
+
 		totalError += getTotalError(targetOutput);
+
+		if (std::isnan(totalError))
+		{
+			std::cout << ".";
+			getchar();
+		}
 	}
 
 	shuffler->join();
@@ -332,11 +389,14 @@ int Network::detect(cv::Mat sample)
 	}
 	inputBias.translateSignal();
 
-	for (layerIt = hiddenLayer.begin(); layerIt != hiddenLayer.end(); layerIt++)
+	for (auto& hiddenLayer : hiddenLayers)
 	{
-		layerIt->translateSignal();
+		for (layerIt = hiddenLayer.first.begin(); layerIt != hiddenLayer.first.end(); layerIt++)
+		{
+			layerIt->translateSignal();
+		}
+		hiddenLayer.second.translateSignal();
 	}
-	hiddenBias.translateSignal();
 
 	auto winner = std::max_element(outputLayer.begin(), outputLayer.end(), [](Neuron left, Neuron right)
 	{

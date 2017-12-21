@@ -28,6 +28,7 @@ public:
 		fs::path trainSelectionPath;
 		double learningRate;
 		cv::Size inputImageSize;
+		size_t hiddenLayersNumber;
 		size_t hiddenLayerSize;
 		size_t classes;
 		fs::path loadWeightsPath;
@@ -37,11 +38,11 @@ public:
 	static std::unique_ptr<Network> load(lua_State* lua, const fs::path& scriptFilename);
 	Network(Config cfg);
 
+	void loadWeights();
 	void train();
 	int detect(cv::Mat sample);
 
 private:
-	void loadWeights();
 	void saveWeights() const;
 	double doEpoch();
 	double getTotalError(const std::vector<double>& targetOutput) const;
@@ -58,7 +59,8 @@ private:
 
 	Layer inputLayer;
 	Bias inputBias;
-	Layer hiddenLayer;
-	Bias hiddenBias;
+	std::vector<std::pair<Layer, Bias>> hiddenLayers;
+	//Layer hiddenLayer;
+	//Bias hiddenBias;
 	Layer outputLayer;
 };
