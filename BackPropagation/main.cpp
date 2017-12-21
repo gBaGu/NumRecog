@@ -29,7 +29,16 @@ int main(int argc, char ** argv)
 		return 0;
 	}
 
-	//net->train();
+	std::string testDir;
+	if (argc == 3 && !strcmp(argv[1], "train"))
+	{
+		net->train();
+		testDir = argv[2];
+	}
+	else if (argc == 2)
+	{
+		testDir = argv[1];
+	}
 
 	std::cout << "\n==============================================\n"
 		<< "TESTING THIS SUPER DEEP (1 HIDDEN LAYER) NEURAL NETWORK\n"
@@ -37,7 +46,7 @@ int main(int argc, char ** argv)
 	size_t testSelectionSize = 0;
 	size_t rightAnswers = 0;
 	size_t wrongAnswers = 0;
-	for (auto& de : fs::directory_iterator("data/test_5x7_10"))
+	for (auto& de : fs::directory_iterator(testDir))
 	{
 		auto path = de.path();
 		if (path.extension().string() != ".jpg")
